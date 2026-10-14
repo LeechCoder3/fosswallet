@@ -62,38 +62,50 @@ jobs:
           name: FossWallet-Widget-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-       
+
       - name: Verify APK signing key
         shell: bash
         run: |
           set -euo pipefail
 
-          KEY_SHA=$(keytool -exportcert \
-            -keystore "$HOME/.android/debug.keystore" \
+          STORE="$HOME/.android/debug.keystore"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner"
+
+          echo "Checking required files..."
+          test -s "$STORE"
+          test -s "$APK"
+          test -x "$APKSIGNER"
+
+          echo "Reading keystore certificate..."
+          keytool -exportcert \
+            -keystore "$STORE" \
             -storepass android \
             -alias androiddebugkey \
-            | sha256sum | cut -d' ' -f1)
+            -file "$RUNNER_TEMP/key.der"
 
-          APK=$(find app/build/outputs/apk/debug \
-            -maxdepth 1 -name '*.apk' -type f \
-            -print -quit)
+          KEY_SHA=$(sha256sum "$RUNNER_TEMP/key.der" | cut -d' ' -f1)
 
-          test -n "$APK"
+          echo "Verifying APK signature..."
+          "$APKSIGNER" verify --verbose --print-certs "$APK" \
+            | tee "$RUNNER_TEMP/apk-certs.txt"
 
-          APK_SHA=$("$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner" \
-            verify --print-certs "$APK" \
-            | awk -F': ' \
-            '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')
+          APK_SHA=$(sed -nE \
+            's/.*certificate SHA-256 digest:[[:space:]]*([[:xdigit:]]{64}).*/\1/p' \
+            "$RUNNER_TEMP/apk-certs.txt" | head -n1)
 
-          test -n "$APK_SHA"
-
-          echo "Key certificate SHA-256: $KEY_SHA"
-          echo "APK certificate SHA-256: $APK_SHA"
-
-          if [[ "$KEY_SHA" != "${APK_SHA,,}" ]]; then
-            echo "::error::APK signing key mismatch!"
+          if [[ -z "$APK_SHA" ]]; then
+            echo "::error::Could not extract APK certificate digest"
             exit 1
           fi
 
-          echo "SIGNATURE VERIFIED: APK matches GitHub secret."
+          echo "Keystore SHA256: $KEY_SHA"
+          echo "APK SHA256:      $APK_SHA"
+
+          if [[ "${KEY_SHA,,}" != "${APK_SHA,,}" ]]; then
+            echo "::error::Signing certificates do not match"
+            exit 1
+          fi
+
+          echo "SIGNATURE VERIFIED SUCCESSFULLY"
 
