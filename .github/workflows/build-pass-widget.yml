@@ -1,4 +1,3 @@
-
 name: FossWallet Widget Debug APK
 
 on:
@@ -7,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
 
@@ -23,7 +23,14 @@ jobs:
       - name: Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-37 build-tools;37.0.0'
+          packages: 'platform-tools platforms;android-37.0 build-tools;37.0.0'
+
+      - name: Fix Android 37 SDK path
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ ! -e "$SDK/platforms/android-37" ]; then
+            ln -s android-37.0 "$SDK/platforms/android-37"
+          fi
 
       - name: Compile debug APK
         run: |
@@ -35,4 +42,5 @@ jobs:
         with:
           name: FossWallet-Widget-debug
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          if-no-files-fo
+          und: error
