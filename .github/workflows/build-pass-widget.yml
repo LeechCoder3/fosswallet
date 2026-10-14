@@ -42,5 +42,12 @@ jobs:
         with:
           name: FossWallet-Widget-debug
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-fo
+        
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FossWallet-Widget-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
           und: error
