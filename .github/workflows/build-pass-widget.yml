@@ -42,5 +42,4 @@ jobs:
         with:
           name: FossWallet-Widget-debug
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-fo
-          und: error
+          if-no-files-found: error
