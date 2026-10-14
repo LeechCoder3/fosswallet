@@ -32,7 +32,26 @@ jobs:
             ln -s android-37.0 "$SDK/platforms/android-37"
           fi
 
+      # Stable signature across all future Actions builds. Never commit the
+      # debug.keystore file: it is restored from a GitHub Actions secret.
+      - name: Restore persistent debug signing key
+        shell: bash
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.FOSSWALLET_DEBUG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEBUG_KEYSTORE_B64:-}" ]]; then
+            echo "::error::Repository secret FOSSWALLET_DEBUG_KEYSTORE_B64 is missing."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          umask 077
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey > /dev/null
+
       - name: Compile debug APK
+        env:
+          FOSSWALLET_WIDGET_BUILD_NUMBER: ${{ github.run_number }}
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleDebug --stacktrace

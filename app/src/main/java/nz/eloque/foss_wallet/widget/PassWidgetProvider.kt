@@ -122,23 +122,36 @@ open class PassWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        /** Render a semi-transparent glass panel colored by the selected pass. */
+        /**
+         * V7: The same 24dp corner radius is used for both widget sizes.
+         * Scaling is uniform to preserve circular corners when a bitmap is
+         * resized by the launcher. All gloss/border layers use the same radius.
+         */
         private fun glassPanelBitmap(context: Context, widgetId: Int, tint: Int, isCompact: Boolean): Bitmap {
             val density = context.resources.displayMetrics.density
             val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
-            val fallbackWidth = if (isCompact) 160 else 320
-            val dpWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, fallbackWidth)
-                .coerceIn(100, 500)
-            val dpHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160)
-                .coerceIn(100, 300)
-            // Limit RemoteViews bitmap memory, even on high-density phones.
-            val width = (dpWidth * density).toInt().coerceIn(160, 440)
-            val height = (dpHeight * density).toInt().coerceIn(120, 255)
+            val defaultWidth = if (isCompact) 160 else 320
+            // Match the V6.1 2x2 card's visible area, not its padded launcher cell.
+            val hInset = if (isCompact) 10f else 0f
+            val vInset = if (isCompact) 18f else 0f
+            val dpWidth = (options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, defaultWidth) - 2f * hInset)
+                .coerceIn(68f, 600f)
+            val dpHeight = (options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160) - 2f * vInset)
+                .coerceIn(68f, 500f)
+            val desiredWidth = dpWidth * density
+            val desiredHeight = dpHeight * density
+            // Uniform downscale to avoid excessive RemoteViews bitmap memory.
+            val scale = minOf(1f, 540f / desiredWidth, 540f / desiredHeight)
+            val width = (desiredWidth * scale).toInt().coerceAtLeast(128)
+            val height = (desiredHeight * scale).toInt().coerceAtLeast(128)
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            val radius = 0.115f * minOf(width, height)
-            val rect = RectF(1.5f, 1.5f, width - 1.5f, height - 1.5f)
+            val unit = density * scale
+            val edge = 1.2f * unit
+            val radius = (24f * unit).coerceAtMost(minOf(width, height) * 0.35f)
+            val rect = RectF(edge, edge, width - edge, height - edge)
+
             fun blend(channel: Int, with: Int, fraction: Float): Int =
                 (channel * fraction + with * (1f - fraction)).toInt().coerceIn(0, 255)
             fun panelColor(alpha: Int, level: Int): Int = Color.argb(
@@ -161,38 +174,46 @@ open class PassWidgetProvider : AppWidgetProvider() {
             canvas.drawRoundRect(rect, radius, radius, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f
-            paint.color = Color.argb(105, 255, 255, 255)
+            paint.strokeWidth = 1.1f * unit
+            paint.color = Color.argb(114, 255, 255, 255)
             canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.strokeWidth = 0.7f
-            paint.color = Color.argb(44, 255, 255, 255)
-            canvas.drawRoundRect(RectF(3f, 3f, width - 3f, height - 3f), radius - 1f, radius - 1f, paint)
+
+            val innerInset = 2.0f * unit
+            val inner = RectF(innerInset, innerInset, width - innerInset, height - innerInset)
+            paint.strokeWidth = 0.65f * unit
+            paint.color = Color.argb(40, 255, 255, 255)
+            val innerRadius = (radius - (innerInset - edge)).coerceAtLeast(1f)
+            canvas.drawRoundRect(inner, innerRadius, innerRadius, paint)
             return bitmap
         }
 
-        /** Frosted translucent pill with glass highlight and fine border. */
+        /** V7: Fully rounded, symmetric pill; gloss and border share one outline. */
         private fun glassButtonBitmap(): Bitmap {
             val width = 280
             val height = 88
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
-            val rect = RectF(1.6f, 1.6f, width - 1.6f, height - 1.6f)
-            val radius = 31f
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            val edge = 2f
+            val rect = RectF(edge, edge, width - edge, height - edge)
+            val radius = (height - 2f * edge) / 2f
             paint.shader = LinearGradient(
                 0f, 0f, 0f, height.toFloat(),
-                intArrayOf(Color.argb(241, 248, 252, 255), Color.argb(216, 225, 241, 250)),
+                intArrayOf(Color.argb(242, 248, 252, 255), Color.argb(214, 225, 241, 250)),
+                null, Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = LinearGradient(
+                0f, 0f, 0f, height.toFloat(),
+                intArrayOf(Color.argb(65, 255, 255, 255), Color.TRANSPARENT),
                 null, Shader.TileMode.CLAMP,
             )
             canvas.drawRoundRect(rect, radius, radius, paint)
             paint.shader = null
-            paint.color = Color.argb(192, 255, 255, 255)
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.3f
+            paint.strokeWidth = 2f
+            paint.color = Color.argb(191, 255, 255, 255)
             canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.color = Color.argb(89, 255, 255, 255)
-            paint.strokeWidth = 1.5f
-            canvas.drawLine(radius, 4f, width - radius, 4f, paint)
             return bitmap
         }
 

@@ -47,7 +47,8 @@ android {
         applicationId = "nz.eloque.foss_wallet"
         minSdk = 28
         targetSdk = 37
-        versionCode = 121
+        versionCode = System.getenv("FOSSWALLET_WIDGET_BUILD_NUMBER")?.toIntOrNull()
+            ?.let { 100_000 + it } ?: 121
         versionName = "0.51.0"
 
         vectorDrawables {
