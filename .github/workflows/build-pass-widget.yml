@@ -19,7 +19,7 @@ jobs:
       - name: Android SDK
         uses: android-actions/setup-android@v3
         with:
-        packages: 'platform-tools platforms;android-37 build-tools;37.0.0'
+         packages: 'platform-tools platforms;android-37 build-tools;37.0.0'
       - name: Compile debug APK
         run: |
           chmod +x gradlew
