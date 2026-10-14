@@ -62,3 +62,38 @@ jobs:
           name: FossWallet-Widget-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+       
+      - name: Verify APK signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KEY_SHA=$(keytool -exportcert \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            | sha256sum | cut -d' ' -f1)
+
+          APK=$(find app/build/outputs/apk/debug \
+            -maxdepth 1 -name '*.apk' -type f \
+            -print -quit)
+
+          test -n "$APK"
+
+          APK_SHA=$("$ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner" \
+            verify --print-certs "$APK" \
+            | awk -F': ' \
+            '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')
+
+          test -n "$APK_SHA"
+
+          echo "Key certificate SHA-256: $KEY_SHA"
+          echo "APK certificate SHA-256: $APK_SHA"
+
+          if [[ "$KEY_SHA" != "${APK_SHA,,}" ]]; then
+            echo "::error::APK signing key mismatch!"
+            exit 1
+          fi
+
+          echo "SIGNATURE VERIFIED: APK matches GitHub secret."
+
