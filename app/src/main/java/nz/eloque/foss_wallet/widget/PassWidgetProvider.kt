@@ -7,6 +7,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Shader
+import android.graphics.RectF
+import android.graphics.Paint
+import android.graphics.LinearGradient
+import android.graphics.Color
+import android.graphics.Canvas
 import android.net.Uri
 import android.widget.RemoteViews
 import androidx.compose.ui.graphics.toArgb
@@ -17,13 +23,23 @@ import nz.eloque.foss_wallet.shortcut.ShortcutService
 import java.io.File
 
 /** Displays the chosen pass as a home-screen ticket card. */
-class PassWidgetProvider : AppWidgetProvider() {
+open class PassWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
         appWidgetIds.forEach { update(context, appWidgetManager, it) }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle,
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        update(context, appWidgetManager, appWidgetId)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -106,28 +122,109 @@ class PassWidgetProvider : AppWidgetProvider() {
             )
         }
 
+        /** Render a semi-transparent glass panel colored by the selected pass. */
+        private fun glassPanelBitmap(context: Context, widgetId: Int, tint: Int, isCompact: Boolean): Bitmap {
+            val density = context.resources.displayMetrics.density
+            val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+            val fallbackWidth = if (isCompact) 160 else 320
+            val dpWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, fallbackWidth)
+                .coerceIn(100, 500)
+            val dpHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160)
+                .coerceIn(100, 300)
+            // Limit RemoteViews bitmap memory, even on high-density phones.
+            val width = (dpWidth * density).toInt().coerceIn(160, 440)
+            val height = (dpHeight * density).toInt().coerceIn(120, 255)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            val radius = 0.115f * minOf(width, height)
+            val rect = RectF(1.5f, 1.5f, width - 1.5f, height - 1.5f)
+            fun blend(channel: Int, with: Int, fraction: Float): Int =
+                (channel * fraction + with * (1f - fraction)).toInt().coerceIn(0, 255)
+            fun panelColor(alpha: Int, level: Int): Int = Color.argb(
+                alpha,
+                blend(Color.red(tint), level, 0.50f),
+                blend(Color.green(tint), level + 4, 0.50f),
+                blend(Color.blue(tint), level + 9, 0.50f),
+            )
+            paint.shader = LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                intArrayOf(panelColor(227, 53), panelColor(208, 26), panelColor(217, 14)),
+                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = LinearGradient(
+                0f, 0f, width * 0.4f, height * 0.75f,
+                intArrayOf(Color.argb(61, 255, 255, 255), Color.argb(12, 255, 255, 255), Color.TRANSPARENT),
+                null, Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = null
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.5f
+            paint.color = Color.argb(105, 255, 255, 255)
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.strokeWidth = 0.7f
+            paint.color = Color.argb(44, 255, 255, 255)
+            canvas.drawRoundRect(RectF(3f, 3f, width - 3f, height - 3f), radius - 1f, radius - 1f, paint)
+            return bitmap
+        }
+
+        /** Frosted translucent pill with glass highlight and fine border. */
+        private fun glassButtonBitmap(): Bitmap {
+            val width = 280
+            val height = 88
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val rect = RectF(1.6f, 1.6f, width - 1.6f, height - 1.6f)
+            val radius = 31f
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.shader = LinearGradient(
+                0f, 0f, 0f, height.toFloat(),
+                intArrayOf(Color.argb(241, 248, 252, 255), Color.argb(216, 225, 241, 250)),
+                null, Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = null
+            paint.color = Color.argb(192, 255, 255, 255)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.3f
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.color = Color.argb(89, 255, 255, 255)
+            paint.strokeWidth = 1.5f
+            canvas.drawLine(radius, 4f, width - radius, 4f, paint)
+            return bitmap
+        }
+
         fun update(context: Context, manager: AppWidgetManager, widgetId: Int) {
             val prefs = preferences(context)
             val passId = prefs.getString(key(widgetId, "passId"), null)
-            val views = RemoteViews(context.packageName, R.layout.pass_widget)
+            val isCompact = manager.getAppWidgetInfo(widgetId)?.provider?.className ==
+                CompactPassWidgetProvider::class.java.name
+            val views = RemoteViews(
+                context.packageName,
+                if (isCompact) R.layout.pass_widget_compact else R.layout.pass_widget,
+            )
 
             val background = prefs.getInt(key(widgetId, "background"), BG_FALLBACK)
             val foreground = prefs.getInt(key(widgetId, "foreground"), FG_FALLBACK)
             val label = prefs.getInt(key(widgetId, "label"), LABEL_FALLBACK)
 
-            // Tint XML shape images rather than replacing the rounded drawable with a flat color.
-            views.setInt(R.id.pass_widget_background_image, "setColorFilter", background)
-            views.setInt(R.id.pass_widget_action_background_image, "setColorFilter", foreground)
-            views.setTextColor(R.id.pass_widget_title, foreground)
-            views.setTextColor(R.id.pass_widget_issuer, label)
-            views.setTextColor(R.id.pass_widget_caption, label)
-            views.setTextColor(R.id.pass_widget_action, background)
+            views.setImageViewBitmap(
+                R.id.pass_widget_background_image,
+                glassPanelBitmap(context, widgetId, background, isCompact),
+            )
+            views.setImageViewBitmap(R.id.pass_widget_action_background_image, glassButtonBitmap())
+            views.setTextColor(R.id.pass_widget_title, Color.WHITE)
+            views.setTextColor(R.id.pass_widget_issuer, Color.rgb(220, 232, 244))
+            views.setTextColor(R.id.pass_widget_caption, Color.rgb(220, 232, 244))
+            views.setTextColor(R.id.pass_widget_action, Color.rgb(27, 54, 76))
 
             val clickIntent: Intent
             if (passId.isNullOrBlank()) {
                 views.setTextViewText(R.id.pass_widget_title, "Ticket auswählen")
                 views.setTextViewText(R.id.pass_widget_issuer, "FossWallet")
-                views.setTextViewText(R.id.pass_widget_action, "Auswählen ↗")
+                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "Wählen" else "Auswählen ↗")
                 views.setImageViewResource(R.id.pass_widget_logo, R.mipmap.icon)
                 clickIntent = Intent(context, PassWidgetConfigActivity::class.java).apply {
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -141,7 +238,7 @@ class PassWidgetProvider : AppWidgetProvider() {
                     R.id.pass_widget_issuer,
                     prefs.getString(key(widgetId, "issuer"), "FossWallet"),
                 )
-                views.setTextViewText(R.id.pass_widget_action, "Ticket öffnen ↗")
+                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "Öffnen ↗" else "Ticket öffnen ↗")
                 val bitmap = logoBitmap(context, passId)
                 if (bitmap != null) {
                     views.setImageViewBitmap(R.id.pass_widget_logo, bitmap)
@@ -169,3 +266,7 @@ class PassWidgetProvider : AppWidgetProvider() {
         }
     }
 }
+
+
+/** Smaller 2x2 widget, reuses pass selection and navigation. */
+class CompactPassWidgetProvider : PassWidgetProvider()

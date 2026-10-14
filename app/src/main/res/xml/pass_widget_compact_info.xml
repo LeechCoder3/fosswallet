@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="125dp"
+    android:minHeight="130dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:resizeMode="none"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable"
+    android:initialLayout="@layout/pass_widget_compact"
+    android:configure="nz.eloque.foss_wallet.widget.PassWidgetConfigActivity"
+    android:updatePeriodMillis="0" />

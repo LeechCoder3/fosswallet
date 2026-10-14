@@ -42,6 +42,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/pass_widget_info" />
         </receiver>
+        <!-- Compact ticket card, independent of the original wide widget. -->
+        <receiver
+            android:name=".widget.CompactPassWidgetProvider"
+            android:exported="true"
+            android:label="FossWallet Ticket 2x2">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pass_widget_compact_info" />
+        </receiver>
         <activity
             android:name=".widget.PassWidgetConfigActivity"
             android:exported="true"

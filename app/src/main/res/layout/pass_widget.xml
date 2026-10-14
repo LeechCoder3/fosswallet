@@ -4,7 +4,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Full-size tinted image retains rounded corners for every pass background. -->
     <ImageView
         android:id="@+id/pass_widget_background_image"
         android:layout_width="match_parent"
@@ -17,11 +16,10 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:gravity="center_vertical"
         android:paddingStart="18dp"
         android:paddingEnd="18dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp">
+        android:paddingTop="13dp"
+        android:paddingBottom="13dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -32,9 +30,9 @@
 
             <ImageView
                 android:id="@+id/pass_widget_logo"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:layout_marginEnd="12dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginEnd="13dp"
                 android:src="@mipmap/icon"
                 android:scaleType="fitCenter"
                 android:contentDescription="Ticketlogo" />
@@ -51,34 +49,40 @@
                     android:layout_height="wrap_content"
                     android:maxLines="1"
                     android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:includeFontPadding="false"
+                    android:letterSpacing="0.035"
                     android:text="FossWallet"
                     android:textColor="#FFBBD6E5"
-                    android:textSize="12sp" />
+                    android:textSize="11sp" />
 
                 <TextView
                     android:id="@+id/pass_widget_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
+                    android:layout_marginTop="5dp"
                     android:maxLines="2"
                     android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:includeFontPadding="false"
+                    android:letterSpacing="-0.01"
                     android:text="Ticket auswählen"
                     android:textColor="#FFFFFFFF"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
+                    android:textSize="19sp" />
             </LinearLayout>
         </LinearLayout>
 
+        <!-- A TextView divider is safe in RemoteViews (plain View is not). -->
         <TextView
             android:id="@+id/pass_widget_divider"
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="#40FFFFFF" />
+            android:background="#30FFFFFF" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="11dp"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -87,11 +91,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:maxLines="1"
                 android:ellipsize="end"
-                android:text="Dein Ticket"
+                android:maxLines="1"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:letterSpacing="0.09"
+                android:text="DEIN TICKET"
                 android:textColor="#FFD4E6F0"
-                android:textSize="13sp" />
+                android:textSize="10sp" />
 
             <FrameLayout
                 android:layout_width="wrap_content"
@@ -110,14 +117,18 @@
                     android:id="@+id/pass_widget_action"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:paddingTop="9dp"
-                    android:paddingBottom="9dp"
-                    android:text="Ticket öffnen ↗"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingBottom="10dp"
+                    android:gravity="center"
+                    android:fontFamily="sans-serif-medium"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Ticket öffnen  ↗"
                     android:textColor="#FF193C53"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:textSize="12sp" />
             </FrameLayout>
         </LinearLayout>
     </LinearLayout>
