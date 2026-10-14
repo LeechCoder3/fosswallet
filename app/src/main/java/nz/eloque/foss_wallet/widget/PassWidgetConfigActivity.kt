@@ -101,6 +101,7 @@ class PassWidgetConfigActivity : ComponentActivity() {
                                 pass.id,
                                 title,
                                 issuer,
+                                pass.colors,
                             )
                             setResult(
                                 RESULT_OK,
