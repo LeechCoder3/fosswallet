@@ -27,6 +27,15 @@ android {
     }
 
     signingConfigs {
+        getByName("debug") {
+            if (System.getenv("FOSSWALLET_WIDGET_BUILD_NUMBER") != null) {
+                val home = System.getenv("HOME") ?: System.getProperty("user.home")
+                storeFile = file("$home/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             storeFile = file(System.getProperty("user.home") + "/work/_temp/keystore.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
@@ -68,6 +77,9 @@ android {
         }
         debug {
             applicationIdSuffix = ".dev"
+            if (System.getenv("FOSSWALLET_WIDGET_BUILD_NUMBER") != null) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
