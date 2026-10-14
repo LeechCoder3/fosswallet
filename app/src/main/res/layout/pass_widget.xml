@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pass_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/pass_widget_background"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <ImageView
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginEnd="12dp"
+        android:src="@mipmap/icon"
+        android:contentDescription="FossWallet" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/pass_widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Ticket auswählen"
+            android:textColor="#FFFFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/pass_widget_issuer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Tippen zum Einrichten"
+            android:textColor="#FFD0E1E3"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/pass_widget_action"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="Öffnen"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp" />
+</LinearLayout>
