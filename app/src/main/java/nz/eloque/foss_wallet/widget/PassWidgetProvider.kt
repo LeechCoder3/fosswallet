@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Shader
@@ -21,6 +22,9 @@ import nz.eloque.foss_wallet.R
 import nz.eloque.foss_wallet.model.PassColors
 import nz.eloque.foss_wallet.shortcut.ShortcutService
 import java.io.File
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /** Displays the chosen pass as a home-screen ticket card. */
 open class PassWidgetProvider : AppWidgetProvider() {
@@ -74,8 +78,13 @@ open class PassWidgetProvider : AppWidgetProvider() {
         private const val BG_FALLBACK = 0xFF152F43.toInt()
         private const val FG_FALLBACK = 0xFFFFFFFF.toInt()
         private const val LABEL_FALLBACK = 0xFFBBD6E5.toInt()
-        private val STRING_KEYS = listOf("passId", "title", "issuer")
+        private val STRING_KEYS = listOf("passId", "title", "issuer", "validUntil")
         private val COLOR_KEYS = listOf("background", "foreground", "label")
+
+        private const val SOFT_HYPHEN = "­"
+
+        /** Word parts at which a long German ticket name may break, e.g. "Deutschland-" / "semesterticket". */
+        private val HYPHEN_STEMS = listOf("semester", "ticket", "karte", "ausweis", "tarif", "verbund", "bahn")
 
         private fun preferences(context: Context) =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -90,11 +99,15 @@ open class PassWidgetProvider : AppWidgetProvider() {
             title: String,
             issuer: String,
             colors: PassColors?,
+            expiresAt: ZonedDateTime? = null,
         ) {
+            // Stored as text so the widget never has to open the pass database. null removes the key.
+            val validUntil = expiresAt?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
             preferences(context).edit()
                 .putString(key(widgetId, "passId"), passId)
                 .putString(key(widgetId, "title"), title)
                 .putString(key(widgetId, "issuer"), issuer)
+                .putString(key(widgetId, "validUntil"), validUntil)
                 .putInt(key(widgetId, "background"), colors?.background?.toArgb() ?: BG_FALLBACK)
                 .putInt(key(widgetId, "foreground"), colors?.foreground?.toArgb() ?: FG_FALLBACK)
                 .putInt(key(widgetId, "label"), colors?.label?.toArgb() ?: LABEL_FALLBACK)
@@ -123,21 +136,64 @@ open class PassWidgetProvider : AppWidgetProvider() {
         }
 
         /**
-         * V7: The same 24dp corner radius is used for both widget sizes.
-         * Scaling is uniform to preserve circular corners when a bitmap is
-         * resized by the launcher. All gloss/border layers use the same radius.
+         * True when most visible pixels of the logo are light. Many pkpass logos are white and made
+         * for a coloured pass, so the white logo plate would swallow them.
+         */
+        private fun isMostlyLight(bitmap: Bitmap): Boolean {
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width <= 0 || height <= 0) return false
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            var sum = 0.0
+            var count = 0
+            for (pixel in pixels) {
+                if (Color.alpha(pixel) < 128) continue
+                sum += 0.2126 * Color.red(pixel) + 0.7152 * Color.green(pixel) + 0.0722 * Color.blue(pixel)
+                count++
+            }
+            return count > 0 && sum / count > 200.0
+        }
+
+        /**
+         * Offers line breaks at common German compound seams, so a name like "Deutschlandsemesterticket"
+         * wraps as "Deutschland-" / "semesterticket" instead of in the middle of a syllable.
+         * Soft hyphens stay invisible when the whole word fits on one line.
+         */
+        private fun softHyphenate(text: String): String {
+            var result = text
+            HYPHEN_STEMS.forEach { stem ->
+                result = result.replace(
+                    Regex("(?<=\\p{L}{3})(?=$stem)", RegexOption.IGNORE_CASE),
+                    SOFT_HYPHEN,
+                )
+            }
+            return result
+        }
+
+        /**
+         * The card fills the complete area the launcher hands to the widget; there is no outer margin
+         * (the old 10dp/18dp insets of the 2x2 card are gone). The bitmap is created at the size the
+         * launcher reports for the current orientation, so scaling stays close to 1:1 and the corners
+         * stay round. All gloss/border layers use the same 24dp corner radius.
          */
         private fun glassPanelBitmap(context: Context, widgetId: Int, tint: Int, isCompact: Boolean): Bitmap {
             val density = context.resources.displayMetrics.density
             val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+            val portrait = context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+            // In portrait the widget is MIN_WIDTH wide and MAX_HEIGHT high, in landscape MAX_WIDTH x MIN_HEIGHT.
+            val reportedWidth = options.getInt(
+                if (portrait) AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH,
+                0,
+            )
+            val reportedHeight = options.getInt(
+                if (portrait) AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,
+                0,
+            )
             val defaultWidth = if (isCompact) 160 else 320
-            // Match the V6.1 2x2 card's visible area, not its padded launcher cell.
-            val hInset = if (isCompact) 10f else 0f
-            val vInset = if (isCompact) 18f else 0f
-            val dpWidth = (options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, defaultWidth) - 2f * hInset)
-                .coerceIn(68f, 600f)
-            val dpHeight = (options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160) - 2f * vInset)
-                .coerceIn(68f, 500f)
+            val defaultHeight = 160
+            val dpWidth = (if (reportedWidth > 0) reportedWidth else defaultWidth).toFloat().coerceIn(68f, 600f)
+            val dpHeight = (if (reportedHeight > 0) reportedHeight else defaultHeight).toFloat().coerceIn(68f, 500f)
             val desiredWidth = dpWidth * density
             val desiredHeight = dpHeight * density
             // Uniform downscale to avoid excessive RemoteViews bitmap memory.
@@ -187,36 +243,6 @@ open class PassWidgetProvider : AppWidgetProvider() {
             return bitmap
         }
 
-        /** V7: Fully rounded, symmetric pill; gloss and border share one outline. */
-        private fun glassButtonBitmap(): Bitmap {
-            val width = 280
-            val height = 88
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            val edge = 2f
-            val rect = RectF(edge, edge, width - edge, height - edge)
-            val radius = (height - 2f * edge) / 2f
-            paint.shader = LinearGradient(
-                0f, 0f, 0f, height.toFloat(),
-                intArrayOf(Color.argb(242, 248, 252, 255), Color.argb(214, 225, 241, 250)),
-                null, Shader.TileMode.CLAMP,
-            )
-            canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.shader = LinearGradient(
-                0f, 0f, 0f, height.toFloat(),
-                intArrayOf(Color.argb(65, 255, 255, 255), Color.TRANSPARENT),
-                null, Shader.TileMode.CLAMP,
-            )
-            canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.shader = null
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2f
-            paint.color = Color.argb(191, 255, 255, 255)
-            canvas.drawRoundRect(rect, radius, radius, paint)
-            return bitmap
-        }
-
         fun update(context: Context, manager: AppWidgetManager, widgetId: Int) {
             val prefs = preferences(context)
             val passId = prefs.getString(key(widgetId, "passId"), null)
@@ -228,44 +254,44 @@ open class PassWidgetProvider : AppWidgetProvider() {
             )
 
             val background = prefs.getInt(key(widgetId, "background"), BG_FALLBACK)
-            val foreground = prefs.getInt(key(widgetId, "foreground"), FG_FALLBACK)
-            val label = prefs.getInt(key(widgetId, "label"), LABEL_FALLBACK)
 
             views.setImageViewBitmap(
                 R.id.pass_widget_background_image,
                 glassPanelBitmap(context, widgetId, background, isCompact),
             )
-            views.setImageViewBitmap(R.id.pass_widget_action_background_image, glassButtonBitmap())
             views.setTextColor(R.id.pass_widget_title, Color.WHITE)
-            views.setTextColor(R.id.pass_widget_issuer, Color.rgb(220, 232, 244))
-            views.setTextColor(R.id.pass_widget_caption, Color.rgb(220, 232, 244))
-            views.setTextColor(R.id.pass_widget_action, Color.rgb(27, 54, 76))
+            views.setTextColor(R.id.pass_widget_issuer, Color.rgb(207, 227, 238))
+            views.setTextColor(R.id.pass_widget_caption, Color.rgb(212, 230, 240))
+            // 2x2: white arrow on a glass circle. 4x2: dark text on the light pill.
+            views.setTextColor(R.id.pass_widget_action, if (isCompact) Color.WHITE else Color.rgb(27, 54, 76))
 
             val clickIntent: Intent
+            val logo: Bitmap?
             if (passId.isNullOrBlank()) {
                 views.setTextViewText(R.id.pass_widget_title, "Ticket auswählen")
                 views.setTextViewText(R.id.pass_widget_issuer, "FossWallet")
-                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "Wählen" else "Auswählen ↗")
-                views.setImageViewResource(R.id.pass_widget_logo, R.mipmap.icon)
+                views.setTextViewText(R.id.pass_widget_caption, "DEIN TICKET")
+                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "+" else "Auswählen ↗")
+                views.setContentDescription(R.id.pass_widget_action, "Ticket auswählen")
+                logo = null
                 clickIntent = Intent(context, PassWidgetConfigActivity::class.java).apply {
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                 }
             } else {
-                views.setTextViewText(
-                    R.id.pass_widget_title,
-                    prefs.getString(key(widgetId, "title"), "Ticket"),
-                )
+                val title = prefs.getString(key(widgetId, "title"), "Ticket") ?: "Ticket"
+                views.setTextViewText(R.id.pass_widget_title, softHyphenate(title))
                 views.setTextViewText(
                     R.id.pass_widget_issuer,
                     prefs.getString(key(widgetId, "issuer"), "FossWallet"),
                 )
-                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "Öffnen ↗" else "Ticket öffnen ↗")
-                val bitmap = logoBitmap(context, passId)
-                if (bitmap != null) {
-                    views.setImageViewBitmap(R.id.pass_widget_logo, bitmap)
-                } else {
-                    views.setImageViewResource(R.id.pass_widget_logo, R.mipmap.icon)
-                }
+                val validUntil = prefs.getString(key(widgetId, "validUntil"), null)
+                views.setTextViewText(
+                    R.id.pass_widget_caption,
+                    if (validUntil.isNullOrBlank()) "DEIN TICKET" else "GÜLTIG BIS $validUntil".uppercase(),
+                )
+                views.setTextViewText(R.id.pass_widget_action, if (isCompact) "↗" else "Ticket öffnen ↗")
+                views.setContentDescription(R.id.pass_widget_action, "Ticket öffnen")
+                logo = logoBitmap(context, passId)
                 clickIntent = Intent(
                     Intent.ACTION_VIEW,
                     Uri.parse("${ShortcutService.BASE_URI}/${Uri.encode(passId)}"),
@@ -275,6 +301,21 @@ open class PassWidgetProvider : AppWidgetProvider() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
             }
+
+            if (logo != null) {
+                views.setImageViewBitmap(R.id.pass_widget_logo, logo)
+            } else {
+                views.setImageViewResource(R.id.pass_widget_logo, R.mipmap.icon)
+            }
+            views.setInt(
+                R.id.pass_widget_logo_plate,
+                "setBackgroundResource",
+                if (logo != null && isMostlyLight(logo)) {
+                    R.drawable.pass_widget_logo_plate_dark
+                } else {
+                    R.drawable.pass_widget_logo_plate
+                },
+            )
 
             val click = PendingIntent.getActivity(
                 context,

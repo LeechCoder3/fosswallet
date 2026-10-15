@@ -102,6 +102,7 @@ class PassWidgetConfigActivity : ComponentActivity() {
                                 title,
                                 issuer,
                                 pass.colors,
+                                pass.expirationDate,
                             )
                             setResult(
                                 RESULT_OK,
