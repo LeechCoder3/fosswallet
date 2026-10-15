@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   2x2 card ("Ruhig"): logo plate and open arrow on top, title and issuer at the bottom.
-  The root has no padding on purpose. The glass bitmap (see PassWidgetProvider) fills the
-  complete area the launcher gives the widget; all spacing lives inside the card.
+  The root has no padding in XML on purpose. PassWidgetProvider sets it at runtime so that the
+  card becomes the largest centred square inside the area the launcher gives the widget, and the
+  glass bitmap fills exactly that square; all spacing lives inside the card.
   Every id the provider touches exists in both widget layouts, because RemoteViews breaks
   on missing ids.
 -->

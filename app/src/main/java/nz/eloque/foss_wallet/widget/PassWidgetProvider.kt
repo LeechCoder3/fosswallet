@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.LinearGradient
 import android.graphics.Color
 import android.graphics.Canvas
+import android.graphics.RadialGradient
 import android.net.Uri
 import android.widget.RemoteViews
 import androidx.compose.ui.graphics.toArgb
@@ -25,6 +26,7 @@ import java.io.File
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlin.math.roundToInt
 
 /** Displays the chosen pass as a home-screen ticket card. */
 open class PassWidgetProvider : AppWidgetProvider() {
@@ -171,14 +173,20 @@ open class PassWidgetProvider : AppWidgetProvider() {
             return result
         }
 
+        /** Size of the whole widget area and of the card drawn inside it, in dp. */
+        private class WidgetSize(
+            val areaWidth: Float,
+            val areaHeight: Float,
+            val cardWidth: Float,
+            val cardHeight: Float,
+        )
+
         /**
-         * The card fills the complete area the launcher hands to the widget; there is no outer margin
-         * (the old 10dp/18dp insets of the 2x2 card are gone). The bitmap is created at the size the
-         * launcher reports for the current orientation, so scaling stays close to 1:1 and the corners
-         * stay round. All gloss/border layers use the same 24dp corner radius.
+         * The 4x2 card fills the complete area the launcher hands to the widget. The 2x2 card is the
+         * largest square that fits into that area and sits centred in it (the provider centres it with
+         * view padding, see [update]). Sizes come from the launcher for the current orientation.
          */
-        private fun glassPanelBitmap(context: Context, widgetId: Int, tint: Int, isCompact: Boolean): Bitmap {
-            val density = context.resources.displayMetrics.density
+        private fun widgetSize(context: Context, widgetId: Int, isCompact: Boolean): WidgetSize {
             val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
             val portrait = context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
             // In portrait the widget is MIN_WIDTH wide and MAX_HEIGHT high, in landscape MAX_WIDTH x MIN_HEIGHT.
@@ -190,12 +198,66 @@ open class PassWidgetProvider : AppWidgetProvider() {
                 if (portrait) AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,
                 0,
             )
-            val defaultWidth = if (isCompact) 160 else 320
-            val defaultHeight = 160
-            val dpWidth = (if (reportedWidth > 0) reportedWidth else defaultWidth).toFloat().coerceIn(68f, 600f)
-            val dpHeight = (if (reportedHeight > 0) reportedHeight else defaultHeight).toFloat().coerceIn(68f, 500f)
-            val desiredWidth = dpWidth * density
-            val desiredHeight = dpHeight * density
+            val width = (if (reportedWidth > 0) reportedWidth else if (isCompact) 160 else 320)
+                .toFloat().coerceIn(68f, 600f)
+            val height = (if (reportedHeight > 0) reportedHeight else 160)
+                .toFloat().coerceIn(68f, 500f)
+            return if (isCompact) {
+                val side = minOf(width, height)
+                WidgetSize(width, height, side, side)
+            } else {
+                WidgetSize(width, height, width, height)
+            }
+        }
+
+        /** Colours derived from the pass colour: a deep gradient plus matching light and dark accents. */
+        private class Palette(
+            val top: Int,
+            val middle: Int,
+            val bottom: Int,
+            /** Light, softly tinted colour for secondary text. */
+            val tint: Int,
+            /** Dark ink for text on the light pill. */
+            val ink: Int,
+        )
+
+        private const val FALLBACK_HUE = 208f
+
+        /**
+         * Keeps the hue of the pass but moves it into a range that always works with white text:
+         * saturation 0.45-0.80, value 0.42 at the top left down to 0.20 at the bottom right, and the
+         * hue drifts a little along the diagonal, so the card reads as a lit surface instead of a flat tint.
+         * Grey and white passes fall back to a calm blue.
+         */
+        private fun palette(base: Int): Palette {
+            val hsv = FloatArray(3)
+            Color.colorToHSV(base, hsv)
+            val grey = hsv[1] < 0.12f
+            val hue = if (grey) FALLBACK_HUE else hsv[0]
+            val sat = if (grey) 0.55f else hsv[1].coerceIn(0.45f, 0.80f)
+            fun shade(hueShift: Float, s: Float, v: Float, alpha: Int = 255): Int = Color.HSVToColor(
+                alpha,
+                floatArrayOf((hue + hueShift + 360f) % 360f, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f)),
+            )
+            return Palette(
+                top = shade(-10f, sat * 0.85f, 0.42f, 240),
+                middle = shade(0f, sat, 0.32f, 234),
+                bottom = shade(14f, sat * 1.05f, 0.20f, 240),
+                tint = shade(0f, 0.16f, 0.97f),
+                ink = shade(0f, 0.75f, 0.30f),
+            )
+        }
+
+        /**
+         * Draws the glass card. A diagonal gradient from the palette, a soft light glow in the upper
+         * left, a faint rim light that fades from top left to bottom right and one very fine inner line. All
+         * layers share the same 24dp corner radius, and the bitmap is scaled uniformly so the corners
+         * stay circular when the launcher resizes it.
+         */
+        private fun glassPanelBitmap(context: Context, size: WidgetSize, palette: Palette): Bitmap {
+            val density = context.resources.displayMetrics.density
+            val desiredWidth = size.cardWidth * density
+            val desiredHeight = size.cardHeight * density
             // Uniform downscale to avoid excessive RemoteViews bitmap memory.
             val scale = minOf(1f, 540f / desiredWidth, 540f / desiredHeight)
             val width = (desiredWidth * scale).toInt().coerceAtLeast(128)
@@ -208,36 +270,32 @@ open class PassWidgetProvider : AppWidgetProvider() {
             val radius = (24f * unit).coerceAtMost(minOf(width, height) * 0.35f)
             val rect = RectF(edge, edge, width - edge, height - edge)
 
-            fun blend(channel: Int, with: Int, fraction: Float): Int =
-                (channel * fraction + with * (1f - fraction)).toInt().coerceIn(0, 255)
-            fun panelColor(alpha: Int, level: Int): Int = Color.argb(
-                alpha,
-                blend(Color.red(tint), level, 0.50f),
-                blend(Color.green(tint), level + 4, 0.50f),
-                blend(Color.blue(tint), level + 9, 0.50f),
-            )
             paint.shader = LinearGradient(
                 0f, 0f, width.toFloat(), height.toFloat(),
-                intArrayOf(panelColor(227, 53), panelColor(208, 26), panelColor(217, 14)),
-                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+                intArrayOf(palette.top, palette.middle, palette.bottom),
+                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = RadialGradient(
+                width * 0.18f, height * 0.06f, maxOf(width, height) * 0.85f,
+                intArrayOf(Color.argb(64, 255, 255, 255), Color.argb(14, 255, 255, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP,
             )
             canvas.drawRoundRect(rect, radius, radius, paint)
             paint.shader = LinearGradient(
-                0f, 0f, width * 0.4f, height * 0.75f,
-                intArrayOf(Color.argb(61, 255, 255, 255), Color.argb(12, 255, 255, 255), Color.TRANSPARENT),
+                0f, 0f, width.toFloat(), height.toFloat(),
+                intArrayOf(Color.argb(72, 255, 255, 255), Color.argb(12, 255, 255, 255)),
                 null, Shader.TileMode.CLAMP,
             )
-            canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.1f * unit
-            paint.color = Color.argb(114, 255, 255, 255)
+            paint.strokeWidth = 0.8f * unit
             canvas.drawRoundRect(rect, radius, radius, paint)
 
+            paint.shader = null
             val innerInset = 2.0f * unit
             val inner = RectF(innerInset, innerInset, width - innerInset, height - innerInset)
             paint.strokeWidth = 0.65f * unit
-            paint.color = Color.argb(40, 255, 255, 255)
+            paint.color = Color.argb(14, 255, 255, 255)
             val innerRadius = (radius - (innerInset - edge)).coerceAtLeast(1f)
             canvas.drawRoundRect(inner, innerRadius, innerRadius, paint)
             return bitmap
@@ -253,17 +311,26 @@ open class PassWidgetProvider : AppWidgetProvider() {
                 if (isCompact) R.layout.pass_widget_compact else R.layout.pass_widget,
             )
 
-            val background = prefs.getInt(key(widgetId, "background"), BG_FALLBACK)
+            val look = palette(prefs.getInt(key(widgetId, "background"), BG_FALLBACK))
+            val size = widgetSize(context, widgetId, isCompact)
 
             views.setImageViewBitmap(
                 R.id.pass_widget_background_image,
-                glassPanelBitmap(context, widgetId, background, isCompact),
+                glassPanelBitmap(context, size, look),
             )
+            if (isCompact) {
+                // Centre the square card: the root keeps the leftover space as padding, so the
+                // background and all content live inside the largest square that fits.
+                val density = context.resources.displayMetrics.density
+                val padH = ((size.areaWidth - size.cardWidth) / 2f * density).roundToInt().coerceAtLeast(0)
+                val padV = ((size.areaHeight - size.cardHeight) / 2f * density).roundToInt().coerceAtLeast(0)
+                views.setViewPadding(R.id.pass_widget_root, padH, padV, padH, padV)
+            }
             views.setTextColor(R.id.pass_widget_title, Color.WHITE)
-            views.setTextColor(R.id.pass_widget_issuer, Color.rgb(207, 227, 238))
-            views.setTextColor(R.id.pass_widget_caption, Color.rgb(212, 230, 240))
-            // 2x2: white arrow on a glass circle. 4x2: dark text on the light pill.
-            views.setTextColor(R.id.pass_widget_action, if (isCompact) Color.WHITE else Color.rgb(27, 54, 76))
+            views.setTextColor(R.id.pass_widget_issuer, look.tint)
+            views.setTextColor(R.id.pass_widget_caption, look.tint)
+            // 2x2: white arrow on a glass circle. 4x2: tinted dark text on the light pill.
+            views.setTextColor(R.id.pass_widget_action, if (isCompact) Color.WHITE else look.ink)
 
             val clickIntent: Intent
             val logo: Bitmap?
